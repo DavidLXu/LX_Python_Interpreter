@@ -2,6 +2,14 @@
 
 A minimal Python interpreter that runs in the browser using Pyodide, with a terminal-style output panel.
 
+## Live Demo
+
+https://davidlxu.github.io/LX_Python_Interpreter/
+
+## Screenshot
+
+![Lixin's Online Python Interpreter screenshot](lx_python_env.png)
+
 ## Features
 
 - Run Python code directly in the browser
