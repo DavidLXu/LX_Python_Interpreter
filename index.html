@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lixin's Online Python Interpreter</title>
+  <style>
+    :root {
+      --bg: #101418;
+      --panel: #171d24;
+      --panel-2: #0d1117;
+      --text: #e6edf3;
+      --muted: #9da7b3;
+      --accent: #3fb950;
+      --border: #2a3440;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background: radial-gradient(circle at top, #19212a 0%, var(--bg) 50%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      padding: 12px;
+      resize: vertical;
+      font: inherit;
+      line-height: 1.45;
+      outline: none;
+      tab-size: 4;
+    }
+
+    .terminal {
+      margin: 0;
+      min-height: 210px;
+      max-height: 40vh;
+      overflow: auto;
+      padding: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.4;
+      background: rgba(0, 0, 0, 0.22);
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: #1f2833;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button:hover { border-color: #3b4a5d; }
+    button.primary {
+      background: #16351e;
+      border-color: #24592f;
+      color: #d6ffe0;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    select {
+      border: 1px solid var(--border);
+      background: #1f2833;
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font: inherit;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .status.ready { color: var(--accent); }
+    .status.error { color: #ff7b72; }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1 style="margin: 0 0 4px; font-size: 22px;">Lixin's Online Python Interpreter</h1>
+    <div class="row">
+      <button id="runBtn" class="primary" disabled>Run Python</button>
+      <button id="clearBtn">Clear Output</button>
+      <select id="exampleSelect" aria-label="Toy examples">
+        <option value="">Choose toy example...</option>
+      </select>
+      <button id="loadExampleBtn">Load Example</button>
+      <span id="status" class="status">Loading Python runtime...</span>
+    </div>
+
+    <section class="panel">
+      <div class="panel-header">Python Code</div>
+      <textarea id="code" spellcheck="false">print("Hello from Python in your browser!")
+for i in range(3):
+    print("line", i)
+</textarea>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">Terminal Output</div>
+      <pre id="terminal" class="terminal">[waiting for runtime]</pre>
+    </section>
+  </main>
+
+  <script type="module">
+    import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v0.27.3/full/pyodide.mjs";
+
+    const runBtn = document.getElementById("runBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const exampleSelect = document.getElementById("exampleSelect");
+    const loadExampleBtn = document.getElementById("loadExampleBtn");
+    const statusEl = document.getElementById("status");
+    const codeEl = document.getElementById("code");
+    const terminalEl = document.getElementById("terminal");
+
+    let pyodide;
+    let loading = true;
+    let running = false;
+
+    const examples = {
+      "hello-loop": {
+        label: "Hello + loop",
+        code: `print("Hello from Python in your browser!")
+for i in range(5):
+    print(f"count = {i}")`
+      },
+      "fizzbuzz": {
+        label: "FizzBuzz",
+        code: `for n in range(1, 31):
+    out = ""
+    if n % 3 == 0:
+        out += "Fizz"
+    if n % 5 == 0:
+        out += "Buzz"
+    print(out or n)`
+      },
+      "functions": {
+        label: "Functions + recursion",
+        code: `def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+for i in range(10):
+    print(f"fib({i}) = {fib(i)}")`
+      },
+      "class-demo": {
+        label: "Class demo",
+        code: `class Counter:
+    def __init__(self, start=0):
+        self.value = start
+
+    def inc(self, step=1):
+        self.value += step
+        return self.value
+
+c = Counter(10)
+print("start:", c.value)
+print("inc:", c.inc())
+print("inc by 5:", c.inc(5))
+print("final:", c.value)`
+      },
+      "stdlib": {
+        label: "Stdlib (math/statistics)",
+        code: `import math
+import statistics as stats
+
+nums = [1, 4, 9, 16, 25]
+roots = [math.sqrt(x) for x in nums]
+print("nums :", nums)
+print("sqrt :", roots)
+print("mean :", stats.mean(roots))
+print("stdev:", round(stats.pstdev(roots), 4))`
+      },
+      "error-traceback": {
+        label: "Error traceback",
+        code: `print("This example shows errors in the terminal output.")
+
+def divide(a, b):
+    return a / b
+
+print(divide(10, 2))
+print(divide(5, 0))`
+      }
+    };
+
+    function setStatus(text, kind = "") {
+      statusEl.textContent = text;
+      statusEl.className = `status ${kind}`.trim();
+    }
+
+    function writeTerminal(text, append = false) {
+      terminalEl.textContent = append ? `${terminalEl.textContent}${text}` : text;
+      terminalEl.scrollTop = terminalEl.scrollHeight;
+    }
+
+    function setButtons() {
+      runBtn.disabled = loading || running || !pyodide;
+    }
+
+    function initExamples() {
+      for (const [key, item] of Object.entries(examples)) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = item.label;
+        exampleSelect.appendChild(option);
+      }
+    }
+
+    function loadSelectedExample() {
+      const selected = examples[exampleSelect.value];
+      if (!selected) return;
+      codeEl.value = selected.code;
+      setStatus(`Loaded example: ${selected.label}`, "ready");
+    }
+
+    async function init() {
+      try {
+        pyodide = await loadPyodide();
+        loading = false;
+        writeTerminal("[python runtime ready]");
+        setStatus("Python runtime ready", "ready");
+      } catch (error) {
+        loading = false;
+        writeTerminal(`Failed to load runtime:\n${error}`);
+        setStatus("Failed to load Python runtime", "error");
+      } finally {
+        setButtons();
+      }
+    }
+
+    async function runPython() {
+      if (!pyodide || running) return;
+      running = true;
+      setButtons();
+      setStatus("Running...", "");
+
+      const userCode = codeEl.value;
+      try {
+        pyodide.globals.set("__user_code__", userCode);
+        const output = await pyodide.runPythonAsync(`
+import io
+import sys
+import traceback
+from contextlib import redirect_stdout, redirect_stderr
+
+buffer = io.StringIO()
+try:
+    with redirect_stdout(buffer), redirect_stderr(buffer):
+        exec(__user_code__, {})
+except Exception:
+    traceback.print_exc(file=buffer)
+
+buffer.getvalue()
+        `);
+
+        writeTerminal(output || "[program finished with no output]");
+        setStatus("Run complete", "ready");
+      } catch (error) {
+        writeTerminal(`JavaScript/Pyodide error:\n${error}`);
+        setStatus("Run failed", "error");
+      } finally {
+        running = false;
+        setButtons();
+      }
+    }
+
+    runBtn.addEventListener("click", runPython);
+    clearBtn.addEventListener("click", () => writeTerminal(""));
+    loadExampleBtn.addEventListener("click", loadSelectedExample);
+    exampleSelect.addEventListener("change", loadSelectedExample);
+
+    initExamples();
+    init();
+  </script>
+</body>
+</html>
